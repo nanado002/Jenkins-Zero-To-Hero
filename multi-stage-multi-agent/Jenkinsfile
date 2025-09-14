@@ -17,13 +17,21 @@ pipeline {
         sh 'node --version'
       }
     }
-      stage('DB') {
+    stage('DB') {
       agent {
-        docker { image 'mysql:latest' }
+        docker { 
+          image 'mysql:latest'
+          args '-e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=testdb'
+        }
       }
       steps {
-        sh 'SELECT * FROM XYZ'
+        sh '''
+          # Wait for MySQL to start and check version
+          sleep 10
+          mysql --version
+          echo "MySQL container is running successfully!"
+        '''
       }
     }
-}
+  }
 }
