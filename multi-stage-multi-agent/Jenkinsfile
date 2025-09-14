@@ -1,5 +1,9 @@
 pipeline {
   agent none
+  environment {
+    DB_ROOT_PASSWORD = credentials('mysql-root-password')
+    DB_USER_PASSWORD = credentials('mysql-user-password')
+  }
   stages {
     stage('Back-end') {
       agent {
@@ -20,16 +24,40 @@ pipeline {
     stage('DB') {
       agent {
         docker { 
-          image 'mysql:latest'
-          args '-e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=testdb'
+          image 'mysql:8.0'
+          args "-e MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD} -e MYSQL_DATABASE=myapp -e MYSQL_USER=myuser -e MYSQL_PASSWORD=${DB_USER_PASSWORD}"
         }
       }
       steps {
         sh '''
-          # Wait for MySQL to start and check version
-          sleep 10
-          mysql --version
-          echo "MySQL container is running successfully!"
+          # Wait for MySQL to be fully ready
+          echo "Waiting for MySQL to start..."
+          sleep 15
+          
+          # Test MySQL connection
+          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT version();"
+          
+          # Show databases
+          echo "Available databases:"
+          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "SHOW DATABASES;"
+          
+          # Create sample data (optional)
+          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "
+            CREATE TABLE IF NOT EXISTS myapp.users (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(100) NOT NULL,
+              email VARCHAR(100) NOT NULL UNIQUE,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            INSERT INTO myapp.users (name, email) VALUES 
+            ('John Doe', 'john@example.com'),
+            ('Jane Smith', 'jane@example.com');
+            
+            SELECT * FROM myapp.users;
+          "
+          
+          echo "MySQL database configured successfully!"
         '''
       }
     }
