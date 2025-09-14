@@ -1,65 +1,49 @@
-pipeline {
-  agent none
-  environment {
-    DB_ROOT_PASSWORD = credentials('mysql-root-password')
-    DB_USER_PASSWORD = credentials('mysql-user-password')
+stage('DB') {
+  agent {
+    docker { 
+      image 'mysql:8.0'
+      args "-e MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD} -e MYSQL_DATABASE=myapp -e MYSQL_USER=myuser -e MYSQL_PASSWORD=${DB_USER_PASSWORD}"
+    }
   }
-  stages {
-    stage('Back-end') {
-      agent {
-        docker { image 'maven:3.8.1-adoptopenjdk-11' }
-      }
-      steps {
-        sh 'mvn --version'
-      }
-    }
-    stage('Front-end') {
-      agent {
-        docker { image 'node:16-alpine' }
-      }
-      steps {
-        sh 'node --version'
-      }
-    }
-    stage('DB') {
-      agent {
-        docker { 
-          image 'mysql:8.0'
-          args "-e MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD} -e MYSQL_DATABASE=myapp -e MYSQL_USER=myuser -e MYSQL_PASSWORD=${DB_USER_PASSWORD}"
-        }
-      }
-      steps {
-        sh '''
-          # Wait for MySQL to be fully ready
-          echo "Waiting for MySQL to start..."
-          sleep 15
-          
-          # Test MySQL connection
-          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT version();"
-          
-          # Show databases
-          echo "Available databases:"
-          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "SHOW DATABASES;"
-          
-          # Create sample data (optional)
-          mysql -h127.0.0.1 -uroot -p"$DB_ROOT_PASSWORD" -e "
-            CREATE TABLE IF NOT EXISTS myapp.users (
-              id INT AUTO_INCREMENT PRIMARY KEY,
-              name VARCHAR(100) NOT NULL,
-              email VARCHAR(100) NOT NULL UNIQUE,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            
-            INSERT INTO myapp.users (name, email) VALUES 
-            ('John Doe', 'john@example.com'),
-            ('Jane Smith', 'jane@example.com');
-            
-            SELECT * FROM myapp.users;
-          "
-          
-          echo "MySQL database configured successfully!"
-        '''
-      }
-    }
+  steps {
+    sh '''
+      # Wait for MySQL to be fully ready (better approach)
+      echo "Waiting for MySQL to start..."
+      
+      # Use mysqladmin to check when MySQL is ready
+      for i in {1..30}; do
+        if mysqladmin ping -hlocalhost -uroot -p"$DB_ROOT_PASSWORD" --silent; then
+          echo "MySQL is ready!"
+          break
+        fi
+        echo "Waiting for MySQL to start... (attempt $i/30)"
+        sleep 2
+      done
+      
+      # Test MySQL connection
+      mysql -hlocalhost -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT version();"
+      
+      # Show databases
+      echo "Available databases:"
+      mysql -hlocalhost -uroot -p"$DB_ROOT_PASSWORD" -e "SHOW DATABASES;"
+      
+      # Create sample data
+      mysql -hlocalhost -uroot -p"$DB_ROOT_PASSWORD" -e "
+        CREATE TABLE IF NOT EXISTS myapp.users (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          email VARCHAR(100) NOT NULL UNIQUE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        INSERT INTO myapp.users (name, email) VALUES 
+        ('John Doe', 'john@example.com'),
+        ('Jane Smith', 'jane@example.com');
+        
+        SELECT * FROM myapp.users;
+      "
+      
+      echo "MySQL database configured successfully!"
+    '''
   }
 }
