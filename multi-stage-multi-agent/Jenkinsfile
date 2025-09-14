@@ -21,14 +21,23 @@ pipeline {
       agent {
         docker { 
           image 'mysql:8.0'
-          args '-e MYSQL_ROOT_PASSWORD=rootpassword -e MYSQL_DATABASE=myapp -e MYSQL_USER=myuser -e MYSQL_PASSWORD=mypassword'
+          args '-e MYSQL_ROOT_PASSWORD=rootpassword -e MYSQL_DATABASE=myapp -e MYSQL_USER=myuser -e MYSQL_PASSWORD=mypassword --health-cmd="mysqladmin ping -uroot -prootpassword" --health-interval=10s --health-timeout=5s --health-retries=3'
         }
       }
       steps {
         sh '''
-          # Wait for MySQL to be fully ready
+          # Wait for MySQL to be fully ready with better health check
           echo "Waiting for MySQL to start..."
-          sleep 20
+          
+          # Use docker healthcheck status or wait with mysqladmin
+          for i in {1..30}; do
+            if mysqladmin ping -uroot -prootpassword --silent; then
+              echo "MySQL is ready!"
+              break
+            fi
+            echo "Waiting for MySQL to start... (attempt $i/30)"
+            sleep 3
+          done
           
           # Test MySQL connection
           mysql -uroot -prootpassword -e "SELECT version();"
@@ -39,18 +48,19 @@ pipeline {
           
           # Create sample data
           mysql -uroot -prootpassword -e "
-            CREATE TABLE IF NOT EXISTS myapp.users (
+            USE myapp;
+            CREATE TABLE IF NOT EXISTS users (
               id INT AUTO_INCREMENT PRIMARY KEY,
               name VARCHAR(100) NOT NULL,
               email VARCHAR(100) NOT NULL UNIQUE,
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             
-            INSERT INTO myapp.users (name, email) VALUES 
+            INSERT IGNORE INTO users (name, email) VALUES 
             ('John Doe', 'john@example.com'),
             ('Jane Smith', 'jane@example.com');
             
-            SELECT * FROM myapp.users;
+            SELECT * FROM users;
           "
           
           echo "MySQL database configured successfully!"
